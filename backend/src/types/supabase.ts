@@ -56,4 +56,6 @@ export interface CicloActividad {
     historial_servicio?: HistorialServicio[];
     adjuntos_ciclo?: AdjuntoCiclo[];
     calculo?: any;
+    total_multas?: number;
+    detalle_multas?: any[];
 }

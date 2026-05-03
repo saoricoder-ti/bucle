@@ -31,6 +31,12 @@ CREATE TABLE ciclos_actividad (
     entidad_id UUID REFERENCES entidades_monitoreadas(id) ON DELETE CASCADE,
     nombre VARCHAR(150) NOT NULL,
     estado VARCHAR(50) DEFAULT 'ACTIVO',
+    total_multas NUMERIC DEFAULT 0,
+    detalle_multas JSONB DEFAULT '[]'::jsonb,
+    valor_matricula NUMERIC DEFAULT 0,
+    estado_pago_sri VARCHAR(50) DEFAULT 'PENDIENTE',
+    fecha_turno TIMESTAMP WITH TIME ZONE,
+    centro_rtv VARCHAR(100),
     creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -63,25 +69,28 @@ CREATE TABLE adjuntos_ciclo (
     creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- 7. Notificaciones (Alertas de prioridad)
+CREATE TABLE notificaciones (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    entidad_id UUID REFERENCES entidades_monitoreadas(id) ON DELETE CASCADE,
+    tipo VARCHAR(50) NOT NULL, -- 'CADUCIDAD', 'MULTA_NUEVA', 'CALENDARIO'
+    titulo VARCHAR(150) NOT NULL,
+    mensaje TEXT NOT NULL,
+    leida BOOLEAN DEFAULT FALSE,
+    prioridad VARCHAR(20) DEFAULT 'NORMAL', -- 'ALTA', 'NORMAL'
+    creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- DATOS DE PRUEBA (MOCK DATA - FASE 4 UNIFICADO)
 INSERT INTO categorias_bucle (id, nombre) VALUES 
 ('11111111-1111-1111-1111-111111111111', 'Impuestos'),
 ('22222222-2222-2222-2222-222222222222', 'Vehículos');
 
 INSERT INTO entidades_monitoreadas (id, categoria_id, tipo_identificador, identificador, nombre_alias, datos_extra) VALUES 
-('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'RUC', '1790011647001', 'Soluciones Tech S.A.', '{"noveno_digito": 4, "estado_conciliacion": "Completado", "estado_general": "Por Declarar", "total_pagar": 1250.40}'),
-('55555555-5555-5555-5555-555555555555', '22222222-2222-2222-2222-222222222222', 'PLACA', 'PBW-5675', 'Mazda 3', '{"ultimo_digito": 5, "estado_general": "Pendiente Matrícula"}');
+('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'RUC', '1790011647001', 'Soluciones Tech S.A.', '{"noveno_digito": 4, "estado_conciliacion": "Completado", "estado_general": "Por Declarar", "total_pagar": 1250.40}');
 
 INSERT INTO ciclos_actividad (id, entidad_id, nombre) VALUES 
-('77777777-7777-7777-7777-777777777771', '33333333-3333-3333-3333-333333333333', 'Declaración IVA Mensual'),
-('77777777-7777-7777-7777-777777777773', '55555555-5555-5555-5555-555555555555', 'Revisión Técnica Vehicular');
-
--- PASOS RTV (4 Pasos Obligatorios)
-INSERT INTO pasos_ciclo (ciclo_id, titulo, completado, orden) VALUES 
-('77777777-7777-7777-7777-777777777773', 'Paso 1: Pago de Multas (ANT/Municipales)', true, 1),
-('77777777-7777-7777-7777-777777777773', 'Paso 2: Pago de Matrícula (SRI)', true, 2),
-('77777777-7777-7777-7777-777777777773', 'Paso 3: Generación de Turno RTV', false, 3),
-('77777777-7777-7777-7777-777777777773', 'Paso 4: Aprobación de Revisión', false, 4);
+('77777777-7777-7777-7777-777777777771', '33333333-3333-3333-3333-333333333333', 'Declaración IVA Mensual');
 
 -- PASOS SRI (Validaciones)
 INSERT INTO pasos_ciclo (ciclo_id, titulo, completado, orden) VALUES 
@@ -91,15 +100,10 @@ INSERT INTO pasos_ciclo (ciclo_id, titulo, completado, orden) VALUES
 
 -- HISTORIAL CRONOLÓGICO
 INSERT INTO historial_servicio (ciclo_id, periodo, fecha_cierre, comentario) VALUES 
-('77777777-7777-7777-7777-777777777773', 'Año 2024', '2024-05-15', 'Aprobado condicionado (luces) - Subsanado.'),
-('77777777-7777-7777-7777-777777777773', 'Año 2025', '2025-05-10', 'Aprobado sin novedades.'),
-
 ('77777777-7777-7777-7777-777777777771', 'Enero 2026', '2026-02-14', 'Declaración a tiempo, sin multas.'),
 ('77777777-7777-7777-7777-777777777771', 'Febrero 2026', '2026-03-12', 'Generó saldo a favor.');
 
 -- DOCUMENTOS ADJUNTOS
 INSERT INTO adjuntos_ciclo (ciclo_id, nombre_archivo, url_archivo) VALUES 
-('77777777-7777-7777-7777-777777777773', 'Matricula_2025.pdf', '#'),
-('77777777-7777-7777-7777-777777777773', 'Pago_Multas_Marzo.pdf', '#'),
 ('77777777-7777-7777-7777-777777777771', 'Declaracion_Previa.pdf', '#'),
 ('77777777-7777-7777-7777-777777777771', 'Reporte_Ventas_Feb.xlsx', '#');
