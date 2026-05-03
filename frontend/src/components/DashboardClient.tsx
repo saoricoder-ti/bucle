@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './Sidebar';
 import DashboardGrid from './DashboardGrid';
 import DetailDrawer from './DetailDrawer';
+import NotificationCenter from './NotificationCenter';
 import { Skeleton } from './ui/skeleton';
 import { Plus, X, Loader2 } from 'lucide-react';
 
@@ -21,27 +22,68 @@ export default function DashboardClient() {
   const [showNewModal, setShowNewModal] = useState(false);
   const [newPlaca, setNewPlaca] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [creationStep, setCreationStep] = useState('');
 
   const handleCreateNew = async () => {
     if (!newPlaca || newPlaca.length < 6) return;
     setIsCreating(true);
+    setCreationStep('Iniciando validación oficial...');
+    
+    const steps = [
+      'Obteniendo información de ANT y SRI...',
+      'Extrayendo ficha técnica técnica...',
+      'Sincronizando valores de deuda...',
+      'Finalizando registro en Bucle...'
+    ];
+    
+    let stepIdx = 0;
+    const interval = setInterval(() => {
+      if (stepIdx < steps.length) {
+        setCreationStep(steps[stepIdx]);
+        stepIdx++;
+      }
+    }, 1800);
+
     try {
       const res = await fetch('http://localhost:3001/api/vehiculos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ placa: newPlaca })
       });
+      
+      clearInterval(interval);
+      
       if (res.ok) {
-        setShowNewModal(false);
-        setNewPlaca('');
-        fetchCiclos();
+        const result = await res.json();
+        setCreationStep('¡Vehículo registrado con éxito!');
+        
+        // Brief pause to show success message
+        setTimeout(async () => {
+          setShowNewModal(false);
+          setNewPlaca('');
+          setCreationStep('');
+          
+          // Refresh list
+          const refreshRes = await fetch('http://localhost:3001/api/dashboard');
+          const refreshData = await refreshRes.json();
+          if (refreshData.success) {
+            setCiclos(refreshData.data);
+            // Find the new cycle and open it
+            const newCycle = refreshData.data.find((c: any) => c.entidades_monitoreadas?.identificador === newPlaca.toUpperCase());
+            if (newCycle) setSelectedCiclo(newCycle);
+          }
+        }, 1000);
+        
       } else {
         const errorData = await res.json();
         alert(errorData.error || 'Error al crear');
+        setCreationStep('');
       }
     } catch (err) {
       alert('Error de red');
+      setCreationStep('');
     } finally {
+      clearInterval(interval);
       setIsCreating(false);
     }
   };
@@ -101,9 +143,12 @@ export default function DashboardClient() {
             <h2 className="text-2xl font-bold text-slate-900">Hola, Saoricoder</h2>
             <p className="text-sm text-slate-500 font-medium mt-0.5">Aquí está el resumen de tus ciclos activos.</p>
           </div>
-          <div className="w-10 h-10 rounded-full border border-slate-200 shadow-sm overflow-hidden bg-slate-50">
-             {/* Initials placeholder */}
-             <div className="w-full h-full flex items-center justify-center font-bold text-slate-400">SA</div>
+          <div className="flex items-center gap-4">
+            <NotificationCenter />
+            <div className="w-10 h-10 rounded-full border border-slate-200 shadow-sm overflow-hidden bg-slate-50">
+               {/* Initials placeholder */}
+               <div className="w-full h-full flex items-center justify-center font-bold text-slate-400">SA</div>
+            </div>
           </div>
         </header>
 
@@ -150,7 +195,7 @@ export default function DashboardClient() {
               <p className="text-sm text-slate-500 mb-4">Ingresa la placa del vehículo que deseas gestionar.</p>
               <input 
                 type="text" 
-                placeholder="Ej. PBW5675" 
+                placeholder="Ej. AAA0123" 
                 value={newPlaca}
                 onChange={(e) => setNewPlaca(e.target.value.toUpperCase())}
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 mb-4 uppercase focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent"
@@ -159,15 +204,28 @@ export default function DashboardClient() {
               <button 
                 onClick={handleCreateNew}
                 disabled={isCreating || newPlaca.length < 6}
-                className="w-full flex justify-center items-center gap-2 bg-blue-600 text-white rounded-xl py-3 text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className="w-full flex flex-col justify-center items-center gap-2 bg-slate-900 text-white rounded-xl py-4 text-sm font-bold hover:bg-slate-800 disabled:opacity-50 transition-all shadow-lg shadow-slate-200"
               >
-                {isCreating ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Registrar Auto'}
+                {isCreating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span className="text-[10px] uppercase tracking-widest opacity-70 animate-pulse">{creationStep}</span>
+                  </>
+                ) : (
+                  <span>Registrar Auto</span>
+                )}
               </button>
             </div>
           </div>
         )}
       </div>
-      <DetailDrawer ciclo={selectedCiclo} onClose={() => setSelectedCiclo(null)} onUpdate={fetchCiclos} />
+      {selectedCiclo && (
+        <DetailDrawer 
+          ciclo={selectedCiclo} 
+          onClose={() => setSelectedCiclo(null)} 
+          onUpdate={fetchCiclos} 
+        />
+      )}
     </>
   );
 }
