@@ -12,6 +12,8 @@ export const metadata: Metadata = {
   description: "Plataforma profesional de gestión unificada.",
 };
 
+import { Toaster } from 'sonner';
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -21,6 +23,7 @@ export default function RootLayout({
     <html lang="es" className={cn("font-sans", geist.variable)}>
       <body className={`${inter.variable} font-sans antialiased text-slate-900 bg-slate-50`}>
         {children}
+        <Toaster position="top-right" richColors expand={true} />
       </body>
     </html>
   );

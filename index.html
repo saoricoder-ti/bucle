@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bucle</title>
+
+    <!-- Tailwind (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["Inter", "system-ui", "Segoe UI", "Roboto", "Helvetica", "Arial", "sans-serif"],
+            },
+            colors: {
+              bucleBlue: "#1e3a8a",
+              bucleEmerald: "#10b981",
+              bucleAmber: "#f59e0b",
+            },
+            boxShadow: {
+              soft: "0 10px 30px rgba(15, 23, 42, 0.08)",
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+  </head>
+
+  <body class="bg-slate-50 text-slate-900 font-sans">
+    <div class="min-h-dvh">
+      <!-- Top bar -->
+      <header class="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur">
+        <div class="mx-auto max-w-6xl px-4 py-4 sm:px-6">
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <div class="grid h-10 w-10 place-items-center rounded-xl bg-bucleBlue text-white shadow-soft">
+                <i data-lucide="infinity" class="h-5 w-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h1 class="text-lg font-semibold tracking-tight">Bucle</h1>
+                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">Dashboard</span>
+                </div>
+                <p class="text-sm text-slate-500">Monitoreo unificado de SRI (fechas) y RTV (pasos).</p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                id="btn-demo-tweak"
+                class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 active:translate-y-px"
+                title="Aplica cambios rápidos al mockDatabase"
+              >
+                <i data-lucide="wand-2" class="h-4 w-4"></i>
+                Demo: modificar datos
+              </button>
+              <button
+                id="btn-reset"
+                class="inline-flex items-center gap-2 rounded-xl bg-bucleBlue px-3 py-2 text-sm font-semibold text-white shadow-soft hover:brightness-110 active:translate-y-px"
+                title="Restaura el mockDatabase"
+              >
+                <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main -->
+      <main class="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <!-- Summary -->
+        <section class="mb-6 grid gap-3 sm:grid-cols-3">
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-600">Entidades monitoreadas</p>
+              <i data-lucide="layers" class="h-4 w-4 text-slate-400"></i>
+            </div>
+            <p id="kpi-entidades" class="mt-2 text-2xl font-semibold tracking-tight text-slate-900">—</p>
+            <p class="mt-1 text-xs text-slate-500">SRI por fecha límite y RTV por pasos/requisitos.</p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-600">Próximo vencimiento</p>
+              <i data-lucide="calendar-clock" class="h-4 w-4 text-slate-400"></i>
+            </div>
+            <p id="kpi-proximo" class="mt-2 text-2xl font-semibold tracking-tight text-slate-900">—</p>
+            <p id="kpi-proximo-sub" class="mt-1 text-xs text-slate-500">—</p>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between">
+              <p class="text-sm font-medium text-slate-600">Avance RTV promedio</p>
+              <i data-lucide="trending-up" class="h-4 w-4 text-slate-400"></i>
+            </div>
+            <p id="kpi-rtv" class="mt-2 text-2xl font-semibold tracking-tight text-slate-900">—</p>
+            <p class="mt-1 text-xs text-slate-500">Basado en pasos completados por entidad RTV.</p>
+          </div>
+        </section>
+
+        <!-- Grid of cards -->
+        <section>
+          <div class="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <h2 class="text-base font-semibold text-slate-900">Dashboard principal</h2>
+              <p class="text-sm text-slate-500">Haz clic en una entidad para ver detalle, checklist y archivos.</p>
+            </div>
+            <div class="hidden items-center gap-2 sm:flex">
+              <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                <span class="h-2 w-2 rounded-full bg-bucleEmerald"></span>
+                En regla
+              </span>
+              <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                <span class="h-2 w-2 rounded-full bg-bucleAmber"></span>
+                Atención
+              </span>
+              <span class="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                <span class="h-2 w-2 rounded-full bg-rose-500"></span>
+                Urgente
+              </span>
+            </div>
+          </div>
+
+          <div id="cards-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"></div>
+        </section>
+      </main>
+
+      <!-- Side panel -->
+      <div id="overlay" class="fixed inset-0 z-30 hidden bg-slate-900/30"></div>
+      <aside
+        id="sidepanel"
+        class="fixed right-0 top-0 z-40 h-dvh w-full translate-x-full border-l border-slate-200 bg-white shadow-soft transition-transform sm:w-[420px]"
+        aria-hidden="true"
+      >
+        <div class="flex h-full flex-col">
+          <div class="border-b border-slate-200 p-4">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p id="sp-badge" class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  <span class="h-2 w-2 rounded-full bg-slate-400"></span>
+                  —
+                </p>
+                <h3 id="sp-title" class="mt-2 text-lg font-semibold tracking-tight text-slate-900">—</h3>
+                <p id="sp-subtitle" class="mt-1 text-sm text-slate-500">—</p>
+              </div>
+              <button
+                id="sp-close"
+                class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                title="Cerrar"
+              >
+                <i data-lucide="x" class="h-4 w-4"></i>
+              </button>
+            </div>
+
+            <div id="sp-metrics" class="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200/60">
+              <!-- injected -->
+            </div>
+          </div>
+
+          <div class="flex-1 overflow-auto p-4">
+            <div class="mb-4 flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-slate-900">Checklist del ciclo</h4>
+              <span id="sp-steps-summary" class="text-xs font-medium text-slate-600">—</span>
+            </div>
+
+            <div id="sp-checklist" class="space-y-2">
+              <!-- injected -->
+            </div>
+
+            <div class="mt-6">
+              <div class="mb-2 flex items-center justify-between">
+                <h4 class="text-sm font-semibold text-slate-900">Archivos (simulado)</h4>
+                <button
+                  id="sp-add-fake-file"
+                  class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <i data-lucide="paperclip" class="h-4 w-4"></i>
+                  Adjuntar archivo fake
+                </button>
+              </div>
+
+              <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
+                <div class="flex items-start gap-3">
+                  <div class="mt-0.5 grid h-9 w-9 place-items-center rounded-xl bg-white ring-1 ring-slate-200">
+                    <i data-lucide="upload" class="h-4 w-4 text-slate-600"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-sm font-semibold text-slate-900">Subir archivos</p>
+                    <p class="mt-1 text-xs text-slate-600">
+                      Simulación local: los “archivos” se guardan dentro de <span class="font-mono">mockDatabase.pasos_ciclo[].archivos</span>.
+                    </p>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                      <input
+                        id="sp-file-input"
+                        type="file"
+                        multiple
+                        class="block w-full text-xs text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-bucleBlue file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white hover:file:brightness-110"
+                      />
+                      <p class="text-xs text-slate-500">No se sube a servidor; solo agrega metadatos al mock.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="mt-3 space-y-2" id="sp-files">
+                <!-- injected -->
+              </div>
+            </div>
+          </div>
+
+          <div class="border-t border-slate-200 p-4">
+            <div class="flex items-center justify-between gap-2">
+              <button
+                id="sp-mark-next"
+                class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-bucleBlue px-3 py-2 text-sm font-semibold text-white shadow-soft hover:brightness-110 active:translate-y-px"
+              >
+                <i data-lucide="check-check" class="h-4 w-4"></i>
+                Completar siguiente paso
+              </button>
+              <button
+                id="sp-toggle-urgent"
+                class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                title="Acerca/aleja la fecha (SRI) para ver semáforo"
+              >
+                <i data-lucide="timer" class="h-4 w-4"></i>
+              </button>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">
+              Tip: abre consola y edita <span class="font-mono">mockDatabase</span>; se re-renderiza automáticamente.
+            </p>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <script>
+      // -----------------------------
+      // Mock DB (tablas generalizadas)
+      // -----------------------------
+      const seedDatabase = () => ({
+        categorias_bucle: [
+          { id: "cat_sri", codigo: "SRI", nombre: "SRI (Impuestos)", ui_color: "#1e3a8a" },
+          { id: "cat_rtv", codigo: "RTV", nombre: "RTV (Revisión Vehicular)", ui_color: "#1e3a8a" },
+        ],
+
+        entidades_monitoreadas: [
+          {
+            id: "ent_001",
+            categoria_id: "cat_sri",
+            nombre: "Comercial Andina S.A.",
+            identificador: "RUC 1790012345001",
+            meta: { noveno_digito_ruc: 7 },
+          },
+          {
+            id: "ent_002",
+            categoria_id: "cat_rtv",
+            nombre: "Camioneta Operaciones",
+            identificador: "Placa PBC-1234",
+            meta: { ultimo_digito_placa: 4, marca: "Toyota", anio: 2021 },
+          },
+          {
+            id: "ent_003",
+            categoria_id: "cat_rtv",
+            nombre: "Sedán Administrativo",
+            identificador: "Placa GAA-0987",
+            meta: { ultimo_digito_placa: 7, marca: "Kia", anio: 2019 },
+          },
+        ],
+
+        ciclos_actividad: [
+          {
+            id: "cic_001",
+            entidad_id: "ent_001",
+            tipo: "deadline", // SRI
+            nombre: "Declaración mensual",
+            fecha_inicio: "2026-04-01",
+            fecha_limite: "2026-05-07",
+            ventana_dias: 30,
+            estado: "activo",
+          },
+          {
+            id: "cic_002",
+            entidad_id: "ent_002",
+            tipo: "steps", // RTV
+            nombre: "RTV anual",
+            fecha_inicio: "2026-03-20",
+            fecha_limite: "2026-06-30",
+            estado: "activo",
+          },
+          {
+            id: "cic_003",
+            entidad_id: "ent_003",
+            tipo: "steps", // RTV
+            nombre: "RTV anual",
+            fecha_inicio: "2026-04-10",
+            fecha_limite: "2026-07-15",
+            estado: "activo",
+          },
+        ],
+
+        pasos_ciclo: [
+          // Ciclo SRI también tiene pasos (generalizado)
+          {
+            id: "pas_001",
+            ciclo_id: "cic_001",
+            orden: 1,
+            titulo: "Revisar comprobantes",
+            completado: true,
+            archivos: [{ nombre: "comprobantes_abril.pdf", sizeKb: 420, fecha: "2026-04-15" }],
+          },
+          { id: "pas_002", ciclo_id: "cic_001", orden: 2, titulo: "Generar borrador", completado: false, archivos: [] },
+          { id: "pas_003", ciclo_id: "cic_001", orden: 3, titulo: "Validar y enviar", completado: false, archivos: [] },
+
+          // RTV (ent_002)
+          { id: "pas_010", ciclo_id: "cic_002", orden: 1, titulo: "Pago de tasa", completado: true, archivos: [] },
+          {
+            id: "pas_011",
+            ciclo_id: "cic_002",
+            orden: 2,
+            titulo: "Agendar turno",
+            completado: true,
+            archivos: [{ nombre: "turno_confirmacion.png", sizeKb: 210, fecha: "2026-04-18" }],
+          },
+          { id: "pas_012", ciclo_id: "cic_002", orden: 3, titulo: "Inspección técnica", completado: false, archivos: [] },
+          { id: "pas_013", ciclo_id: "cic_002", orden: 4, titulo: "Descargar certificado", completado: false, archivos: [] },
+
+          // RTV (ent_003)
+          { id: "pas_020", ciclo_id: "cic_003", orden: 1, titulo: "Pago de tasa", completado: false, archivos: [] },
+          { id: "pas_021", ciclo_id: "cic_003", orden: 2, titulo: "Agendar turno", completado: false, archivos: [] },
+          { id: "pas_022", ciclo_id: "cic_003", orden: 3, titulo: "Inspección técnica", completado: false, archivos: [] },
+          { id: "pas_023", ciclo_id: "cic_003", orden: 4, titulo: "Descargar certificado", completado: false, archivos: [] },
+        ],
+      });
+
+      const deepReactive = (obj, onChange) => {
+        const seen = new WeakMap();
+        const wrap = (value) => {
+          if (!value || typeof value !== "object") return value;
+          if (seen.has(value)) return seen.get(value);
+
+          const proxy = new Proxy(value, {
+            get(target, prop, receiver) {
+              const v = Reflect.get(target, prop, receiver);
+              return wrap(v);
+            },
+            set(target, prop, newValue, receiver) {
+              const ok = Reflect.set(target, prop, newValue, receiver);
+              onChange();
+              return ok;
+            },
+            deleteProperty(target, prop) {
+              const ok = Reflect.deleteProperty(target, prop);
+              onChange();
+              return ok;
+            },
+          });
+          seen.set(value, proxy);
+          return proxy;
+        };
+        return wrap(obj);
+      };
+
+      const fmtDate = (iso) => {
+        try {
+          const d = new Date(iso + "T00:00:00");
+          return d.toLocaleDateString("es-EC", { year: "numeric", month: "short", day: "2-digit" });
+        } catch {
+          return iso;
+        }
+      };
+
+      const daysBetween = (fromIso, toIso) => {
+        const a = new Date(fromIso + "T00:00:00");
+        const b = new Date(toIso + "T00:00:00");
+        return Math.round((b - a) / (1000 * 60 * 60 * 24));
+      };
+
+      const clamp01 = (n) => Math.max(0, Math.min(1, n));
+
+      const statusColor = (kind, value) => {
+        // kind: "daysRemaining" | "progress"
+        if (kind === "daysRemaining") {
+          if (value <= 0) return "rose";
+          if (value <= 10) return "amber";
+          return "emerald";
+        }
+        // progress: 0..1
+        if (value >= 0.8) return "emerald";
+        if (value >= 0.4) return "amber";
+        return "rose";
+      };
+
+      const colorClasses = (tone) => {
+        if (tone === "emerald") return { bg: "bg-bucleEmerald", text: "text-bucleEmerald", ring: "ring-bucleEmerald/20" };
+        if (tone === "amber") return { bg: "bg-bucleAmber", text: "text-bucleAmber", ring: "ring-bucleAmber/20" };
+        return { bg: "bg-rose-500", text: "text-rose-500", ring: "ring-rose-500/20" };
+      };
+
+      // Global state
+      let rawDb = seedDatabase();
+      let selectedEntidadId = null;
+
+      const scheduleRender = (() => {
+        let raf = 0;
+        return () => {
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(render);
+        };
+      })();
+
+      // Expose reactive DB
+      window.mockDatabase = deepReactive(rawDb, scheduleRender);
+
+      const getCategoria = (categoriaId) => window.mockDatabase.categorias_bucle.find((c) => c.id === categoriaId);
+      const getCicloActivo = (entidadId) => window.mockDatabase.ciclos_actividad.find((c) => c.entidad_id === entidadId && c.estado === "activo");
+      const getPasos = (cicloId) =>
+        window.mockDatabase.pasos_ciclo
+          .filter((p) => p.ciclo_id === cicloId)
+          .slice()
+          .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0));
+
+      const todayIso = () => {
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      };
+
+      const computeSRI = (ciclo) => {
+        const today = todayIso();
+        const remaining = daysBetween(today, ciclo.fecha_limite);
+        const windowDays = Math.max(1, Number(ciclo.ventana_dias ?? 30));
+        const progress = clamp01((windowDays - Math.max(0, remaining)) / windowDays);
+        return { remainingDays: remaining, progress };
+      };
+
+      const computeSteps = (cicloId) => {
+        const pasos = getPasos(cicloId);
+        const total = pasos.length || 1;
+        const done = pasos.filter((p) => !!p.completado).length;
+        const progress = clamp01(done / total);
+        return { pasos, done, total, progress };
+      };
+
+      // UI: Sidepanel open/close
+      const overlay = document.getElementById("overlay");
+      const sidepanel = document.getElementById("sidepanel");
+      const openPanel = (entidadId) => {
+        selectedEntidadId = entidadId;
+        overlay.classList.remove("hidden");
+        sidepanel.classList.remove("translate-x-full");
+        sidepanel.setAttribute("aria-hidden", "false");
+        render();
+      };
+      const closePanel = () => {
+        overlay.classList.add("hidden");
+        sidepanel.classList.add("translate-x-full");
+        sidepanel.setAttribute("aria-hidden", "true");
+        selectedEntidadId = null;
+      };
+
+      overlay.addEventListener("click", closePanel);
+      document.getElementById("sp-close").addEventListener("click", closePanel);
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closePanel();
+      });
+
+      // Actions
+      document.getElementById("btn-reset").addEventListener("click", () => {
+        rawDb = seedDatabase();
+        window.mockDatabase = deepReactive(rawDb, scheduleRender);
+        selectedEntidadId = null;
+        closePanel();
+        scheduleRender();
+      });
+
+      document.getElementById("btn-demo-tweak").addEventListener("click", () => {
+        // Cambios visibles: acerca SRI a vencer, y marca un paso RTV como completado
+        const sri = window.mockDatabase.ciclos_actividad.find((c) => c.tipo === "deadline");
+        if (sri) {
+          const t = new Date(todayIso() + "T00:00:00");
+          const near = new Date(t.getTime() + 4 * 24 * 60 * 60 * 1000); // 4 días
+          const yyyy = near.getFullYear();
+          const mm = String(near.getMonth() + 1).padStart(2, "0");
+          const dd = String(near.getDate()).padStart(2, "0");
+          sri.fecha_limite = `${yyyy}-${mm}-${dd}`;
+        }
+        const anyPending = window.mockDatabase.pasos_ciclo.find((p) => p.ciclo_id === "cic_003" && !p.completado);
+        if (anyPending) anyPending.completado = true;
+      });
+
+      document.getElementById("sp-mark-next").addEventListener("click", () => {
+        if (!selectedEntidadId) return;
+        const ciclo = getCicloActivo(selectedEntidadId);
+        if (!ciclo) return;
+        const pasos = getPasos(ciclo.id);
+        const next = pasos.find((p) => !p.completado);
+        if (next) next.completado = true;
+      });
+
+      document.getElementById("sp-toggle-urgent").addEventListener("click", () => {
+        if (!selectedEntidadId) return;
+        const ciclo = getCicloActivo(selectedEntidadId);
+        if (!ciclo || ciclo.tipo !== "deadline") return;
+        const today = new Date(todayIso() + "T00:00:00");
+        const curr = new Date(ciclo.fecha_limite + "T00:00:00");
+        const remaining = Math.round((curr - today) / (1000 * 60 * 60 * 24));
+        const nextRemaining = remaining > 0 ? -1 : 12;
+        const next = new Date(today.getTime() + nextRemaining * 24 * 60 * 60 * 1000);
+        const yyyy = next.getFullYear();
+        const mm = String(next.getMonth() + 1).padStart(2, "0");
+        const dd = String(next.getDate()).padStart(2, "0");
+        ciclo.fecha_limite = `${yyyy}-${mm}-${dd}`;
+      });
+
+      document.getElementById("sp-add-fake-file").addEventListener("click", () => {
+        if (!selectedEntidadId) return;
+        const ciclo = getCicloActivo(selectedEntidadId);
+        if (!ciclo) return;
+        const pasos = getPasos(ciclo.id);
+        const target = pasos.find((p) => !p.completado) || pasos[pasos.length - 1];
+        if (!target) return;
+
+        const n = Math.floor(Math.random() * 900 + 100);
+        target.archivos = target.archivos || [];
+        target.archivos.push({ nombre: `adjunto_${n}.pdf`, sizeKb: Math.floor(Math.random() * 800 + 120), fecha: todayIso() });
+      });
+
+      document.getElementById("sp-file-input").addEventListener("change", (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length || !selectedEntidadId) return;
+        const ciclo = getCicloActivo(selectedEntidadId);
+        if (!ciclo) return;
+        const pasos = getPasos(ciclo.id);
+        const target = pasos.find((p) => !p.completado) || pasos[pasos.length - 1];
+        if (!target) return;
+
+        target.archivos = target.archivos || [];
+        files.forEach((f) => {
+          target.archivos.push({
+            nombre: f.name,
+            sizeKb: Math.max(1, Math.round(f.size / 1024)),
+            fecha: todayIso(),
+          });
+        });
+        e.target.value = "";
+      });
+
+      // Render helpers
+      const circleSvg = ({ progress, tone, label, sublabel }) => {
+        const size = 88;
+        const r = 34;
+        const c = 2 * Math.PI * r;
+        const offset = c * (1 - clamp01(progress));
+        const classes = colorClasses(tone);
+        return `
+          <div class="relative h-[88px] w-[88px]">
+            <svg viewBox="0 0 ${size} ${size}" class="h-[88px] w-[88px] -rotate-90">
+              <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="rgba(148,163,184,0.25)" stroke-width="8"></circle>
+              <circle
+                cx="${size / 2}"
+                cy="${size / 2}"
+                r="${r}"
+                fill="none"
+                stroke="currentColor"
+                class="${classes.text}"
+                stroke-linecap="round"
+                stroke-width="8"
+                stroke-dasharray="${c}"
+                stroke-dashoffset="${offset}"
+              ></circle>
+            </svg>
+            <div class="absolute inset-0 grid place-items-center text-center">
+              <div>
+                <div class="text-xl font-semibold tracking-tight ${classes.text}">${label}</div>
+                <div class="text-[11px] font-medium text-slate-500">${sublabel}</div>
+              </div>
+            </div>
+          </div>
+        `;
+      };
+
+      const progressBar = ({ progress, tone, left, right }) => {
+        const classes = colorClasses(tone);
+        const w = Math.round(clamp01(progress) * 100);
+        return `
+          <div class="w-full">
+            <div class="mb-2 flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">${left}</span>
+              <span class="font-semibold ${classes.text}">${right}</span>
+            </div>
+            <div class="h-2 rounded-full bg-slate-200/70">
+              <div class="h-2 rounded-full ${classes.bg}" style="width:${w}%"></div>
+            </div>
+          </div>
+        `;
+      };
+
+      const renderKPIs = () => {
+        const entidades = window.mockDatabase.entidades_monitoreadas;
+        document.getElementById("kpi-entidades").textContent = String(entidades.length);
+
+        // Próximo vencimiento (por fecha_limite)
+        const ciclos = window.mockDatabase.ciclos_actividad.filter((c) => c.estado === "activo");
+        const now = todayIso();
+        const byDeadline = ciclos
+          .map((c) => ({ c, d: daysBetween(now, c.fecha_limite) }))
+          .sort((a, b) => a.d - b.d)[0];
+
+        if (byDeadline) {
+          const ent = entidades.find((e) => e.id === byDeadline.c.entidad_id);
+          const tone = statusColor("daysRemaining", byDeadline.d);
+          const pretty = byDeadline.d <= 0 ? "Hoy / vencido" : `${byDeadline.d} día(s)`;
+          document.getElementById("kpi-proximo").textContent = pretty;
+          document.getElementById("kpi-proximo").className = `mt-2 text-2xl font-semibold tracking-tight ${colorClasses(tone).text}`;
+          document.getElementById("kpi-proximo-sub").textContent = `${ent?.nombre ?? "—"} · ${fmtDate(byDeadline.c.fecha_limite)}`;
+        } else {
+          document.getElementById("kpi-proximo").textContent = "—";
+          document.getElementById("kpi-proximo-sub").textContent = "—";
+        }
+
+        // RTV promedio
+        const rtvEnts = entidades.filter((e) => getCategoria(e.categoria_id)?.codigo === "RTV");
+        const rtvProgress = rtvEnts
+          .map((e) => {
+            const ciclo = getCicloActivo(e.id);
+            if (!ciclo) return 0;
+            return computeSteps(ciclo.id).progress;
+          })
+          .filter((n) => Number.isFinite(n));
+        const avg = rtvProgress.length ? rtvProgress.reduce((a, b) => a + b, 0) / rtvProgress.length : 0;
+        const tone = statusColor("progress", avg);
+        document.getElementById("kpi-rtv").textContent = `${Math.round(avg * 100)}%`;
+        document.getElementById("kpi-rtv").className = `mt-2 text-2xl font-semibold tracking-tight ${colorClasses(tone).text}`;
+      };
+
+      const renderCards = () => {
+        const grid = document.getElementById("cards-grid");
+        const entidades = window.mockDatabase.entidades_monitoreadas;
+
+        grid.innerHTML = entidades
+          .map((ent) => {
+            const cat = getCategoria(ent.categoria_id);
+            const ciclo = getCicloActivo(ent.id);
+            if (!ciclo) return "";
+
+            const isSRI = cat?.codigo === "SRI" || ciclo.tipo === "deadline";
+            const isRTV = cat?.codigo === "RTV" || ciclo.tipo === "steps";
+
+            let headline = "";
+            let body = "";
+            let tone = "emerald";
+            let subline = `${ciclo.nombre} · Límite: ${fmtDate(ciclo.fecha_limite)}`;
+
+            if (isSRI) {
+              const sri = computeSRI(ciclo);
+              tone = statusColor("daysRemaining", sri.remainingDays);
+              const label = sri.remainingDays <= 0 ? "0" : String(sri.remainingDays);
+              const sub = sri.remainingDays <= 0 ? "hoy" : "días";
+              headline = `
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-semibold ${colorClasses(tone).text}">SRI · Noveno dígito: ${ent.meta?.noveno_digito_ruc ?? "—"}</p>
+                    <h3 class="mt-1 text-base font-semibold tracking-tight text-slate-900">${ent.nombre}</h3>
+                    <p class="mt-1 text-sm text-slate-500">${ent.identificador}</p>
+                  </div>
+                  ${circleSvg({ progress: sri.progress, tone, label, sublabel: sub })}
+                </div>
+              `;
+              body = `
+                <div class="mt-4 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200/60">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-slate-600">Fecha límite</span>
+                    <span class="font-semibold text-slate-900">${fmtDate(ciclo.fecha_limite)}</span>
+                  </div>
+                  <div class="mt-2 flex items-center justify-between text-xs">
+                    <span class="font-medium text-slate-600">Estado</span>
+                    <span class="inline-flex items-center gap-2 rounded-full bg-white px-2.5 py-1 font-semibold text-slate-700 ring-1 ring-slate-200">
+                      <span class="h-2 w-2 rounded-full ${colorClasses(tone).bg}"></span>
+                      ${sri.remainingDays <= 0 ? "Vencido" : sri.remainingDays <= 10 ? "Atención" : "En regla"}
+                    </span>
+                  </div>
+                </div>
+              `;
+            } else if (isRTV) {
+              const { done, total, progress } = computeSteps(ciclo.id);
+              tone = statusColor("progress", progress);
+              headline = `
+                <div class="flex items-center justify-between gap-3">
+                  <div>
+                    <p class="text-xs font-semibold ${colorClasses(tone).text}">RTV · Último dígito: ${ent.meta?.ultimo_digito_placa ?? "—"}</p>
+                    <h3 class="mt-1 text-base font-semibold tracking-tight text-slate-900">${ent.nombre}</h3>
+                    <p class="mt-1 text-sm text-slate-500">${ent.identificador}</p>
+                  </div>
+                  <div class="grid h-10 w-10 place-items-center rounded-xl bg-white ring-1 ring-slate-200">
+                    <i data-lucide="car" class="h-5 w-5 text-slate-700"></i>
+                  </div>
+                </div>
+              `;
+              body = `
+                <div class="mt-4 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200/60">
+                  ${progressBar({
+                    progress,
+                    tone,
+                    left: "Progreso del ciclo",
+                    right: `${done} de ${total}`,
+                  })}
+                  <div class="mt-3 flex items-center justify-between text-xs">
+                    <span class="font-medium text-slate-600">Fecha límite</span>
+                    <span class="font-semibold text-slate-900">${fmtDate(ciclo.fecha_limite)}</span>
+                  </div>
+                </div>
+              `;
+            } else {
+              headline = `
+                <div>
+                  <p class="text-xs font-semibold text-slate-500">${cat?.nombre ?? "Categoría"}</p>
+                  <h3 class="mt-1 text-base font-semibold tracking-tight text-slate-900">${ent.nombre}</h3>
+                  <p class="mt-1 text-sm text-slate-500">${ent.identificador}</p>
+                </div>
+              `;
+            }
+
+            return `
+              <button
+                class="group w-full rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft focus:outline-none focus:ring-2 focus:ring-bucleBlue/30"
+                data-entidad="${ent.id}"
+              >
+                <div class="flex items-center justify-between">
+                  <div class="inline-flex items-center gap-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    <span class="h-2 w-2 rounded-full ${colorClasses(tone).bg}"></span>
+                    ${cat?.codigo ?? ciclo.tipo.toUpperCase()}
+                  </div>
+                  <div class="flex items-center gap-2 text-xs font-medium text-slate-500 opacity-0 transition group-hover:opacity-100">
+                    Ver detalle
+                    <i data-lucide="arrow-right" class="h-4 w-4"></i>
+                  </div>
+                </div>
+                <div class="mt-3">${headline}</div>
+                <p class="mt-3 text-xs text-slate-500">${subline}</p>
+                ${body}
+              </button>
+            `;
+          })
+          .join("");
+
+        // Bind clicks
+        grid.querySelectorAll("[data-entidad]").forEach((el) => {
+          el.addEventListener("click", () => openPanel(el.getAttribute("data-entidad")));
+        });
+      };
+
+      const renderSidepanel = () => {
+        if (!selectedEntidadId) return;
+        const ent = window.mockDatabase.entidades_monitoreadas.find((e) => e.id === selectedEntidadId);
+        const cat = ent ? getCategoria(ent.categoria_id) : null;
+        const ciclo = ent ? getCicloActivo(ent.id) : null;
+        if (!ent || !ciclo) return;
+
+        const badge = document.getElementById("sp-badge");
+        const badgeDot = badge.querySelector("span");
+        const title = document.getElementById("sp-title");
+        const subtitle = document.getElementById("sp-subtitle");
+        const metrics = document.getElementById("sp-metrics");
+        const checklist = document.getElementById("sp-checklist");
+        const stepsSummary = document.getElementById("sp-steps-summary");
+        const files = document.getElementById("sp-files");
+
+        title.textContent = ent.nombre;
+        subtitle.textContent = `${cat?.nombre ?? "Entidad"} · ${ent.identificador}`;
+
+        const pasosAgg = computeSteps(ciclo.id);
+        const done = pasosAgg.done;
+        const total = pasosAgg.total;
+        const progress = pasosAgg.progress;
+
+        let tone = statusColor("progress", progress);
+        let headerLabel = cat?.codigo ?? ciclo.tipo.toUpperCase();
+
+        if (ciclo.tipo === "deadline") {
+          const sri = computeSRI(ciclo);
+          tone = statusColor("daysRemaining", sri.remainingDays);
+          headerLabel = "SRI";
+          stepsSummary.textContent = `${done} de ${total} pasos`;
+
+          metrics.innerHTML = `
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Fecha límite</span>
+              <span class="font-semibold text-slate-900">${fmtDate(ciclo.fecha_limite)}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Días restantes</span>
+              <span class="font-semibold ${colorClasses(tone).text}">${sri.remainingDays <= 0 ? "0 (hoy/vencido)" : sri.remainingDays}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Noveno dígito (RUC)</span>
+              <span class="font-semibold text-slate-900">${ent.meta?.noveno_digito_ruc ?? "—"}</span>
+            </div>
+          `;
+        } else {
+          headerLabel = "RTV";
+          stepsSummary.textContent = `${done} de ${total} pasos`;
+          metrics.innerHTML = `
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Fecha límite</span>
+              <span class="font-semibold text-slate-900">${fmtDate(ciclo.fecha_limite)}</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Progreso</span>
+              <span class="font-semibold ${colorClasses(tone).text}">${Math.round(progress * 100)}%</span>
+            </div>
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-medium text-slate-600">Último dígito (placa)</span>
+              <span class="font-semibold text-slate-900">${ent.meta?.ultimo_digito_placa ?? "—"}</span>
+            </div>
+          `;
+        }
+
+        badge.innerHTML = `
+          <span class="h-2 w-2 rounded-full ${colorClasses(tone).bg}"></span>
+          ${headerLabel} · ${ciclo.nombre}
+        `;
+        // Re-select dot (recreated)
+        // eslint-disable-next-line no-unused-vars
+        const _ignore = badgeDot;
+
+        const pasos = getPasos(ciclo.id);
+        checklist.innerHTML = pasos
+          .map((p) => {
+            const stepTone = p.completado ? "emerald" : "amber";
+            const cls = colorClasses(stepTone);
+            const countFiles = (p.archivos || []).length;
+            return `
+              <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                <div class="flex items-start justify-between gap-3">
+                  <label class="flex min-w-0 items-start gap-3">
+                    <input
+                      type="checkbox"
+                      ${p.completado ? "checked" : ""}
+                      data-step="${p.id}"
+                      class="mt-1 h-4 w-4 rounded border-slate-300 text-bucleBlue focus:ring-bucleBlue/30"
+                    />
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-semibold text-slate-900">${p.orden}. ${p.titulo}</p>
+                      <p class="mt-1 text-xs text-slate-500">${p.completado ? "Completado" : "Pendiente"} · ${countFiles} archivo(s)</p>
+                    </div>
+                  </label>
+                  <span class="inline-flex items-center gap-2 rounded-full bg-slate-50 px-2 py-1 text-xs font-semibold ${cls.text} ring-1 ${cls.ring}">
+                    <span class="h-2 w-2 rounded-full ${cls.bg}"></span>
+                    ${p.completado ? "OK" : "Pend."}
+                  </span>
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+
+        checklist.querySelectorAll("[data-step]").forEach((cb) => {
+          cb.addEventListener("change", () => {
+            const stepId = cb.getAttribute("data-step");
+            const step = window.mockDatabase.pasos_ciclo.find((x) => x.id === stepId);
+            if (step) step.completado = cb.checked;
+          });
+        });
+
+        // Files view: flatten by step
+        const allFiles = pasos.flatMap((p) => (p.archivos || []).map((f) => ({ ...f, step: `${p.orden}. ${p.titulo}` })));
+        files.innerHTML =
+          allFiles.length === 0
+            ? `<p class="text-xs text-slate-500">Aún no hay archivos adjuntos.</p>`
+            : allFiles
+                .slice()
+                .reverse()
+                .map((f) => {
+                  return `
+                    <div class="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+                      <div class="flex min-w-0 items-start gap-3">
+                        <div class="mt-0.5 grid h-9 w-9 place-items-center rounded-xl bg-slate-50 ring-1 ring-slate-200">
+                          <i data-lucide="file" class="h-4 w-4 text-slate-600"></i>
+                        </div>
+                        <div class="min-w-0">
+                          <p class="truncate text-sm font-semibold text-slate-900">${f.nombre}</p>
+                          <p class="mt-1 text-xs text-slate-500">${f.sizeKb} KB · ${fmtDate(f.fecha)} · ${f.step}</p>
+                        </div>
+                      </div>
+                      <span class="rounded-full bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">Local</span>
+                    </div>
+                  `;
+                })
+                .join("");
+      };
+
+      const render = () => {
+        renderKPIs();
+        renderCards();
+        if (selectedEntidadId) renderSidepanel();
+        if (window.lucide) window.lucide.createIcons();
+      };
+
+      // Boot
+      render();
+    </script>
+  </body>
+</html>
+

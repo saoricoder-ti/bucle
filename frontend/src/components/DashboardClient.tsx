@@ -8,6 +8,9 @@ import NotificationCenter from './NotificationCenter';
 import { Skeleton } from './ui/skeleton';
 import { Plus, X, Loader2 } from 'lucide-react';
 
+import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+
 export default function DashboardClient() {
   const [ciclos, setCiclos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +21,52 @@ export default function DashboardClient() {
   // Ref to always access latest selectedCiclo without stale closure
   const selectedCicloRef = useRef<any | null>(null);
   useEffect(() => { selectedCicloRef.current = selectedCiclo; }, [selectedCiclo]);
+
+  // Real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'entidades_monitoreadas',
+        },
+        (payload) => {
+          const newData = payload.new as any;
+          const oldData = payload.old as any;
+
+          // Detect sync completion
+          if (newData.sync_status === 'COMPLETADO' && oldData.sync_status !== 'COMPLETADO') {
+            toast.success(`Sincronización Exitosa`, {
+              description: `El vehículo ${newData.identificador} ha sido procesado correctamente.`,
+              duration: 5000,
+            });
+            fetchCiclos();
+          }
+
+          // Detect sync failure
+          if (['FALLO_PORTAL', 'CAPTCHA_DETECTADO'].includes(newData.sync_status) && oldData.sync_status !== newData.sync_status) {
+            toast.error(`Atención en ${newData.identificador}`, {
+              description: newData.sync_message || 'Hubo un problema con la sincronización oficial.',
+              duration: 6000,
+            });
+            fetchCiclos();
+          }
+          
+          // If the updated entity is the one currently open, we might need to refresh it
+          if (selectedCicloRef.current?.entidades_monitoreadas?.id === newData.id) {
+            fetchCiclos();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [newPlaca, setNewPlaca] = useState('');

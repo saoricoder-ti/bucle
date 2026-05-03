@@ -18,15 +18,18 @@ export async function scrapeSRIData(placa: string): Promise<SRIValores> {
   const normalizedPlate = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
   
   try {
-    // Official SRI API (Public)
+    // Official SRI API (Public) - Ensuring better headers to avoid 404/Block
     const url = `https://srienlinea.sri.gob.ec/sri-matriculacion-consultas-backend-cpa/rest/ConsultaMatriculacion/consultaPorPlaca?placa=${normalizedPlate}`;
     
     const response = await axios.get(url, {
       headers: {
         'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'Accept-Language': 'es-ES,es;q=0.9',
+        'Origin': 'https://srienlinea.sri.gob.ec',
+        'Referer': 'https://srienlinea.sri.gob.ec/sri-en-linea/SriEnLinea/ConsultaMatriculacion/ConsultarDatosMatriculacion/ConsultarDatosMatriculacion',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      timeout: 10000 // 10 seconds timeout
+      timeout: 10000 
     });
 
     const data = response.data;

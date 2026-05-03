@@ -22,6 +22,8 @@ CREATE TABLE entidades_monitoreadas (
     identificador VARCHAR(50) NOT NULL,
     nombre_alias VARCHAR(150),
     datos_extra JSONB, -- RTV: {"ultimo_digito": 5, "estado_general": "Pendiente Matrícula"} | SRI: {"noveno_digito": 4, "estado_conciliacion": "Completado", "estado_general": "Por Declarar"}
+    sync_status VARCHAR(50) DEFAULT 'IDLE', -- 'BUSCANDO_FICHA', 'COMPLETADO', 'FALLO_PORTAL', etc.
+    sync_message TEXT DEFAULT '',
     creado_en TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

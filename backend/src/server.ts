@@ -298,6 +298,19 @@ app.get('/api/vehiculos/ficha/:placa', async (req: Request, res: Response) => {
         console.log(`[Modular] Consultando FICHA para: ${normalizedPlate}`);
         
         const data = await scrapeUnifiedData(normalizedPlate);
+
+        // PERSISTENCE: Update technical data in database
+        if (data && (data.marca || data.modelo)) {
+            const nombreAlias = `${data.marca} ${data.modelo}`.toUpperCase();
+            await supabase
+                .from('entidades_monitoreadas')
+                .update({ 
+                    datos_extra: { ...data, fuente: 'real' },
+                    nombre_alias: nombreAlias
+                })
+                .eq('identificador', normalizedPlate);
+        }
+
         res.json({ success: true, data });
     } catch (err: any) {
         console.error('🔥 Error en ficha:', err);
@@ -312,6 +325,41 @@ app.get('/api/vehiculos/multas/:placa', async (req: Request, res: Response) => {
         console.log(`[Modular] Consultando MULTAS para: ${normalizedPlate}`);
         
         const data = await scrapeFines(normalizedPlate);
+
+        // PERSISTENCE: Update fines in active cycle
+        const { data: entidad } = await supabase
+            .from('entidades_monitoreadas')
+            .select('id')
+            .eq('identificador', normalizedPlate)
+            .single();
+
+        if (entidad) {
+            await supabase
+                .from('ciclos_actividad')
+                .update({ 
+                    total_multas: data.totalMultas, 
+                    detalle_multas: data.detalleMultas 
+                })
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO');
+
+            // Update step 1 status
+            const { data: activeCycle } = await supabase
+                .from('ciclos_actividad')
+                .select('id')
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO')
+                .single();
+
+            if (activeCycle) {
+                await supabase
+                    .from('pasos_ciclo')
+                    .update({ completado: data.totalMultas === 0 })
+                    .eq('ciclo_id', activeCycle.id)
+                    .eq('orden', 1);
+            }
+        }
+
         res.json({ success: true, data });
     } catch (err: any) {
         console.error('🔥 Error en multas:', err);
@@ -326,6 +374,41 @@ app.get('/api/vehiculos/matricula/:placa', async (req: Request, res: Response) =
         console.log(`[Modular] Consultando MATRICULA para: ${normalizedPlate}`);
         
         const data = await scrapeSRIData(normalizedPlate);
+
+        // PERSISTENCE: Update matricula in active cycle
+        const { data: entidad } = await supabase
+            .from('entidades_monitoreadas')
+            .select('id')
+            .eq('identificador', normalizedPlate)
+            .single();
+
+        if (entidad) {
+            await supabase
+                .from('ciclos_actividad')
+                .update({ 
+                    valor_matricula: data.total,
+                    estado_pago_sri: data.estado
+                })
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO');
+
+            // Update step 2 status
+            const { data: activeCycle } = await supabase
+                .from('ciclos_actividad')
+                .select('id')
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO')
+                .single();
+
+            if (activeCycle) {
+                await supabase
+                    .from('pasos_ciclo')
+                    .update({ completado: data.total === 0 || data.estado === 'PAGADO' })
+                    .eq('ciclo_id', activeCycle.id)
+                    .eq('orden', 2);
+            }
+        }
+
         res.json({ success: true, data });
     } catch (err: any) {
         console.error('🔥 Error en matricula:', err);
@@ -335,6 +418,19 @@ app.get('/api/vehiculos/matricula/:placa', async (req: Request, res: Response) =
 
 import { getCompleteVehicleData } from './services/vehicleOrchestrator';
 
+// Helper to update sync status
+async function updateSyncStatus(identificador: string, status: string, message: string) {
+    console.log(`[Sync] ${identificador}: ${status} - ${message}`);
+    try {
+        await supabase
+            .from('entidades_monitoreadas')
+            .update({ sync_status: status, sync_message: message })
+            .eq('identificador', identificador);
+    } catch (e) {
+        console.error('[SyncStatusUpdateError]', e);
+    }
+}
+
 app.post('/api/vehiculos', async (req: Request, res: Response) => {
     try {
         const { placa } = req.body;
@@ -342,12 +438,12 @@ app.post('/api/vehiculos', async (req: Request, res: Response) => {
 
         const normalizedPlate = placa.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
         
-        // 🇪🇨 ECUADOR PLATE VALIDATION (3 Letters + 3 or 4 Numbers)
+        // 🇪🇨 ECUADOR PLATE VALIDATION
         const plateRegex = /^[A-Z]{3}\d{3,4}$/i;
         if (!plateRegex.test(normalizedPlate)) {
             return res.status(400).json({ 
                 success: false, 
-                error: 'Formato de placa inválido. Debe tener 3 letras y 3 o 4 números (Ej: ABC1234 o ABC123)' 
+                error: 'Formato de placa inválido. Debe tener 3 letras y 3 o 4 números.' 
             });
         }
 
@@ -360,65 +456,121 @@ app.post('/api/vehiculos', async (req: Request, res: Response) => {
         
         if (existing) return res.status(400).json({ success: false, error: 'La placa ya existe' });
 
-        // 2. Initial Registration (Lightweight)
-        // We try to get basic data but proceed even if it fails partially
-        let fullData;
-        try {
-            fullData = await getCompleteVehicleData(normalizedPlate);
-        } catch (e) {
-            console.warn('[Registration] Scraper global falló, creando registro básico...');
-            fullData = null;
-        }
-
-        const marca = fullData?.technicalSpecs?.marca || 'Cargando...';
-        const modelo = fullData?.technicalSpecs?.modelo || '';
-        const nombreAlias = marca !== 'Cargando...' ? `${marca} ${modelo}`.toUpperCase() : `VEHÍCULO ${normalizedPlate}`;
-
-        const technicalData = fullData ? {
-            ...fullData.technicalSpecs,
-            ...fullData.legalStatus,
-            fuente: 'real'
-        } : { marca: 'Cargando...', modelo: 'Cargando...', fuente: 'pendiente' };
-
-        const { data: entidad, error: entityErr } = await supabase
+        // 2. Initial Registration (INSTANT)
+        const { data: newVehicle, error: createError } = await supabase
             .from('entidades_monitoreadas')
             .insert({
-                tipo_identificador: 'PLACA',
                 identificador: normalizedPlate,
-                nombre_alias: nombreAlias,
-                datos_extra: technicalData
+                tipo_identificador: 'PLACA',
+                nombre_alias: `Buscando ${normalizedPlate}...`,
+                sync_status: 'BUSCANDO_FICHA',
+                sync_message: 'Iniciando búsqueda técnica oficial...'
             })
             .select('*')
             .single();
 
-        if (entityErr) throw entityErr;
+        if (createError) throw createError;
 
-        // 3. Create Cycle
-        const { data: ciclo, error: cicloErr } = await supabase
-            .from('ciclos_actividad')
-            .insert({
-                entidad_id: (entidad as any).id,
-                nombre: 'Revisión Técnica Vehicular',
-                estado: 'ACTIVO',
-                total_multas: fullData?.financialPending?.totalMultas || 0,
-                valor_matricula: fullData?.financialPending?.valorMatricula || 0,
-            })
-            .select('*')
-            .single();
+        // 3. RESPOND IMMEDIATELY
+        res.status(201).json({ success: true, data: newVehicle });
 
-        if (cicloErr) throw cicloErr;
+        // 4. BACKGROUND PROCESSING
+        (async () => {
+            const entidadId = (newVehicle as any).id;
+            console.log(`[BackgroundSync] Iniciando proceso para ${normalizedPlate} (${entidadId})`);
+            try {
+                // Phase 1: Ficha Técnica
+                console.log(`[BackgroundSync] Fase 1: Ficha Técnica para ${normalizedPlate}`);
+                await updateSyncStatus(normalizedPlate, 'BUSCANDO_FICHA', 'Estamos extrayendo marca, modelo y año...');
+                const fullData = await getCompleteVehicleData(normalizedPlate);
+                
+                let technicalSpecs: any = { marca: 'Desconocido', modelo: 'Desconocido', anio_fabricacion: 0 };
+                if (fullData && fullData.technicalSpecs) {
+                    technicalSpecs = fullData.technicalSpecs;
+                    const nombreAlias = `${technicalSpecs.marca} ${technicalSpecs.modelo}`.toUpperCase();
+                    await supabase
+                        .from('entidades_monitoreadas')
+                        .update({ 
+                            datos_extra: { ...technicalSpecs, fuente: 'real' },
+                            nombre_alias: nombreAlias
+                        })
+                        .eq('id', entidadId);
+                    console.log(`[BackgroundSync] Ficha técnica obtenida para ${normalizedPlate}`);
+                }
 
-        // 4. Steps
-        const steps = [
-            { ciclo_id: (ciclo as any).id, titulo: 'Pago de Multas (ANT/Municipales)', orden: 1, completado: (fullData?.financialPending?.totalMultas === 0) },
-            { ciclo_id: (ciclo as any).id, titulo: 'Pago de Matrícula (SRI)', orden: 2, completado: (fullData?.financialPending?.valorMatricula === 0) },
-            { ciclo_id: (ciclo as any).id, titulo: 'Generación de Turno RTV', orden: 3, completado: false },
-            { ciclo_id: (ciclo as any).id, titulo: 'Aprobación de Revisión', orden: 4, completado: false }
-        ];
+                // Phase 2: Create Active Cycle
+                console.log(`[BackgroundSync] Fase 2: Ciclo y Multas para ${normalizedPlate}`);
+                await updateSyncStatus(normalizedPlate, 'BUSCANDO_MULTAS', 'Ficha técnica obtenida. Consultando infracciones...');
+                const { data: cycle } = await supabase
+                    .from('ciclos_actividad')
+                    .insert({
+                        entidad_id: entidadId,
+                        nombre: `RTV ${new Date().getFullYear()}`,
+                        estado: 'ACTIVO'
+                    })
+                    .select('*')
+                    .single();
 
-        await supabase.from('pasos_ciclo').insert(steps);
+                if (cycle) {
+                    const cicloId = (cycle as any).id;
+                    
+                    // Create Steps
+                    await supabase.from('pasos_ciclo').insert([
+                        { ciclo_id: cicloId, titulo: 'Pago de Multas (ANT/Municipales)', orden: 1 },
+                        { ciclo_id: cicloId, titulo: 'Pago de Matrícula (SRI)', orden: 2 },
+                        { ciclo_id: cicloId, titulo: 'Generación de Turno RTV', orden: 3 },
+                        { ciclo_id: cicloId, titulo: 'Aprobación de Revisión', orden: 4 }
+                    ]);
 
-        res.json({ success: true, data: { entidad, ciclo } });
+                    // Scrape Multas
+                    const fines = await scrapeFines(normalizedPlate);
+                    await supabase
+                        .from('ciclos_actividad')
+                        .update({ total_multas: fines.totalMultas, detalle_multas: fines.detalleMultas })
+                        .eq('id', cicloId);
+                    
+                    await supabase
+                        .from('pasos_ciclo')
+                        .update({ completado: fines.totalMultas === 0 })
+                        .eq('ciclo_id', cicloId)
+                        .eq('orden', 1);
+                    console.log(`[BackgroundSync] Multas procesadas para ${normalizedPlate}: ${fines.totalMultas}`);
+
+                    // Phase 3: Matrícula
+                    console.log(`[BackgroundSync] Fase 3: Matrícula para ${normalizedPlate}`);
+                    await updateSyncStatus(normalizedPlate, 'BUSCANDO_MATRICULA', 'Consultando valores pendientes en el SRI...');
+                    const matricula = await scrapeSRIData(normalizedPlate);
+                    
+                    await supabase
+                        .from('ciclos_actividad')
+                        .update({ valor_matricula: matricula.total, estado_pago_sri: matricula.estado })
+                        .eq('id', cicloId);
+
+                    await supabase
+                        .from('pasos_ciclo')
+                        .update({ completado: (matricula.total === 0 || matricula.estado === 'PAGADO') })
+                        .eq('ciclo_id', cicloId)
+                        .eq('orden', 2);
+                    console.log(`[BackgroundSync] Matrícula procesada para ${normalizedPlate}: ${matricula.total}`);
+                }
+
+                console.log(`[BackgroundSync] Sincronización COMPLETADA para ${normalizedPlate}`);
+                await updateSyncStatus(normalizedPlate, 'COMPLETADO', 'Sincronización finalizada correctamente.');
+
+            } catch (bgError: any) {
+                console.error(`[BackgroundSync] 🔥 Error en ${normalizedPlate}:`, bgError.message);
+                let status = 'FALLO_PORTAL';
+                let msg = 'No se pudo completar la sincronización con portales oficiales.';
+                
+                if (bgError.message.includes('CAPTCHA')) {
+                    status = 'CAPTCHA_DETECTADO';
+                    msg = 'Portal requiere validación manual. Reintentando en breve...';
+                }
+
+                await updateSyncStatus(normalizedPlate, status, msg);
+            }
+        })();
+
     } catch (err: any) {
         console.error('🔥 Error en registro:', err);
         res.status(500).json({ success: false, error: err.message });
@@ -561,6 +713,39 @@ app.post('/api/rtv/agendar', async (req: Request, res: Response) => {
     }
 });
 
+app.post('/api/rtv/paso/proceso', async (req: Request, res: Response) => {
+    try {
+        const { ciclo_id, step_id } = req.body;
+        
+        // Find step by id/titulo in the cycle
+        const { data: steps } = await supabase
+            .from('pasos_ciclo')
+            .select('id, titulo')
+            .eq('ciclo_id', ciclo_id);
+
+        if (!steps) throw new Error('No se encontraron pasos');
+
+        const step = steps.find((s: any) => {
+            if (step_id === 'multas') return s.titulo.includes('Multas');
+            if (step_id === 'matricula') return s.titulo.includes('Matrícula');
+            if (step_id === 'turno') return s.titulo.includes('Turno');
+            if (step_id === 'revision') return s.titulo.includes('Revisión');
+            return false;
+        });
+
+        if (step) {
+            await supabase
+                .from('pasos_ciclo')
+                .update({ metadata: { estado_intermedio: 'EN_PROCESO', fecha_inicio: new Date().toISOString() } })
+                .eq('id', step.id);
+        }
+
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.post('/api/rtv/finalizar', async (req: Request, res: Response) => {
     try {
         const { ciclo_id } = req.body;
@@ -606,4 +791,13 @@ app.post('/api/rtv/finalizar', async (req: Request, res: Response) => {
 
 app.listen(PORT, () => {
     console.log(`🚀 Backend Bucle TS corriendo en http://localhost:${PORT}`);
+});
+
+// Global Error Handling to prevent "Clean Exit" on unhandled async errors
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('🔥 Uncaught Exception:', err);
 });

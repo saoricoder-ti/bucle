@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bucle - Dashboard Unificado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', 'sans-serif'] },
+                    colors: {
+                        brand: {
+                            bg: '#F9FAFB',
+                            primary: '#1e40af', // Azul corporativo
+                            success: '#10b981', // Verde esmeralda
+                            text: '#111827',
+                            muted: '#6b7280'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { background-color: #F9FAFB; }
+        
+        /* SVG Gauge Anim */
+        .circular-chart { display: block; margin: 0 auto; max-width: 100%; max-height: 250px; }
+        .circle-bg { fill: none; stroke: #f3f4f6; stroke-width: 3.8; }
+        .circle { fill: none; stroke-width: 2.8; stroke-linecap: round; animation: progress 1s ease-out forwards; }
+        @keyframes progress { 0% { stroke-dasharray: 0 100; } }
+        
+        /* Ocultar scrollbar visualmente pero permitir scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="text-brand-text font-sans h-screen overflow-hidden flex">
+    
+    <!-- COLUMNA 1: Sidebar de Navegación -->
+    <aside class="w-64 bg-white border-r border-gray-200 h-full flex flex-col shrink-0 hidden md:flex z-20 shadow-sm">
+        <div class="px-6 py-6 border-b border-gray-100 flex items-center gap-3">
+            <div class="w-8 h-8 bg-brand-primary rounded-lg text-white flex items-center justify-center font-bold text-xl shadow-md">B</div>
+            <h1 class="text-xl font-bold tracking-tight text-gray-900">Bucle</h1>
+        </div>
+        <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+            <a href="#" class="flex items-center gap-3 px-3 py-2.5 bg-blue-50 text-brand-primary rounded-md font-medium transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                Dashboard
+            </a>
+            <a href="#" class="flex items-center gap-3 px-3 py-2.5 text-gray-600 hover:bg-gray-50 rounded-md font-medium transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                Documentos
+            </a>
+            <a href="#" class="flex items-center gap-3 px-3 py-2.5 text-gray-600 hover:bg-gray-50 rounded-md font-medium transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Historial
+            </a>
+        </nav>
+    </aside>
+
+    <!-- COLUMNA 2: Área Principal -->
+    <main class="flex-1 h-full flex flex-col overflow-hidden bg-brand-bg relative">
+        <header class="bg-white border-b border-gray-200 px-8 py-5 flex justify-between items-center shadow-sm shrink-0">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-900">Hola, Saoricoder</h2>
+                <p class="text-sm text-gray-500 font-medium mt-0.5">Aquí está el resumen de tus ciclos activos.</p>
+            </div>
+            <div class="w-10 h-10 rounded-full border border-gray-200 shadow-sm overflow-hidden">
+                <img src="https://api.dicebear.com/9.x/notionists/svg?seed=Sebas" alt="Perfil" class="w-full h-full object-cover bg-gray-50">
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-y-auto p-8 no-scrollbar" id="main-container">
+            <div class="mb-6"><h3 class="text-lg font-bold text-gray-900">Ciclos Activos</h3></div>
+            
+            <div id="ciclos-grid" class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <!-- Loading State -->
+                <div class="col-span-full flex flex-col justify-center items-center py-20 text-gray-400">
+                    <svg class="animate-spin mb-4 h-8 w-8 text-brand-primary" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Sincronizando información...
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- COLUMNA 3: Panel Lateral de Detalles -->
+    <aside class="w-full md:w-96 bg-white border-l border-gray-200 h-full flex flex-col shrink-0 transform translate-x-full md:translate-x-0 transition-transform duration-300 absolute md:relative right-0 z-30 shadow-2xl md:shadow-none" id="right-sidebar">
+        <!-- Contenido Inyectado por JS -->
+        <div class="flex-1 flex items-center justify-center text-gray-400 p-8 text-center bg-gray-50/50">
+            <div>
+                <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                <p class="font-medium">Selecciona un ciclo en el área principal para ver sus detalles.</p>
+            </div>
+        </div>
+    </aside>
+
+    <script src="scripts.js"></script>
+</body>
+</html>

@@ -17,6 +17,7 @@ import { getVehicleColorClass } from "../lib/vehicleColorUtils";
 import CarImage from "./CarImage";
 import { CicloActividad } from "../types/supabase";
 import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -53,6 +54,8 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
   const [showMore, setShowMore] = useState(false);
   const [manualForm, setManualForm] = useState({ marca: '', modelo: '', anio: '', clase: '' });
   const [isSavingManual, setIsSavingManual] = useState(false);
+  // Combined loading flag for all fetches
+  const isFetchingAll = isScrapingFicha || isScrapingMultas || isScrapingMatricula;
 
   const [localDatosExtra, setLocalDatosExtra] = useState<any>({});
   const [localNombreAlias, setLocalNombreAlias] = useState<string>('');
@@ -73,6 +76,20 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
   const [selectedCenter, setSelectedCenter] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+
+  // Sync status
+  const [syncStatus, setSyncStatus] = useState<string>(entidad.sync_status || 'IDLE');
+  const [syncMessage, setSyncMessage] = useState<string>(entidad.sync_message || '');
+
+  // Real-time subscription placeholder
+  // In a real app, you would use supabase.channel().on('postgres_changes', ...)
+  // For now, we will update local state if the component re-renders with new props
+  useEffect(() => {
+    if (entidad) {
+      setSyncStatus(entidad.sync_status || 'IDLE');
+      setSyncMessage(entidad.sync_message || '');
+    }
+  }, [entidad]);
 
   const fetchFicha = async () => {
     if (isRuc) return;
@@ -225,6 +242,19 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
   };
 
   
+  const handleStartStep = async (stepId: string) => {
+    try {
+      await fetch(`http://localhost:3001/api/rtv/paso/proceso`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ciclo_id: ciclo?.id, step_id: stepId })
+      });
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      console.error('Error updating step status');
+    }
+  };
+
   const pasos = ciclo.pasos_ciclo || [];
   const historial = ciclo.historial_servicio || [];
   const adjuntos = ciclo.adjuntos_ciclo || [];
@@ -354,8 +384,34 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
   };
 
   return (
-    <Sheet open={!!ciclo} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full sm:w-[450px] p-0 flex flex-col bg-slate-50 overflow-hidden border-l border-slate-200">
+    <Sheet open={!!ciclo} onOpenChange={(open) => { if (!open && isFetchingAll) return; if (!open) onClose(); }}>
+      <SheetContent 
+        side="right" 
+        className={cn(
+          "w-full sm:w-[450px] p-0 flex flex-col bg-slate-50 overflow-hidden border-l border-slate-200",
+          isFetchingAll && "[&_[data-slot=sheet-close]]:opacity-20 [&_[data-slot=sheet-close]]:pointer-events-none transition-all duration-500"
+        )}
+      >
+        {/* Persistence Banner */}
+        {isFetchingAll && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-blue-600 text-white px-4 py-2 text-center text-xs font-bold z-20 sticky top-0 shadow-md"
+          >
+            Sincronizando datos con ANT y SRI... Mantén abierta esta ventana.
+          </motion.div>
+        )}
+
+        {isFetchingAll && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/70 backdrop-blur-sm z-10">
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="text-sm font-medium text-slate-700">Sincronizando datos con ANT y SRI...</span>
+            </div>
+          </div>
+        )}
+
         
         <motion.div 
           className="flex-1 overflow-y-auto no-scrollbar"
@@ -419,6 +475,43 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
             <span className="px-4 py-1.5 bg-slate-100 text-slate-700 font-bold text-xs rounded-full border border-slate-200 uppercase tracking-wider">
               {estadoGeneral || 'Activo'}
             </span>
+
+            {/* Sync Status Banner */}
+            {syncStatus !== 'IDLE' && syncStatus !== 'COMPLETADO' && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 w-full max-w-sm bg-blue-50 border border-blue-100 rounded-xl p-3 flex items-center gap-3 shadow-sm"
+              >
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                  </div>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-[10px] font-black uppercase tracking-tighter text-blue-600 leading-none mb-1">{syncStatus.replace('_', ' ')}</p>
+                  <p className="text-[11px] font-medium text-blue-800 leading-tight">{syncMessage || 'Sincronizando datos oficiales...'}</p>
+                </div>
+              </motion.div>
+            )}
+
+            {syncStatus === 'FALLO_PORTAL' || syncStatus === 'CAPTCHA_DETECTADO' ? (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 w-full max-w-sm bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-center gap-3 shadow-sm"
+              >
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                    <TriangleAlert className="w-4 h-4 text-amber-600" />
+                  </div>
+                </div>
+                <div className="flex-1 text-left">
+                  <p className="text-[10px] font-black uppercase tracking-tighter text-amber-600 leading-none mb-1">ATENCIÓN REQUERIDA</p>
+                  <p className="text-[11px] font-medium text-amber-800 leading-tight">{syncMessage}</p>
+                </div>
+              </motion.div>
+            ) : null}
           </motion.div>
 
           {/* SRI View */}
@@ -965,38 +1058,63 @@ export default function DetailDrawer({ ciclo, onClose, onUpdate }: { ciclo: Cicl
                                 {/* PHASE 3: Turno Interaction */}
                                 {p.id === 'turno' && !isCompleted && !isBlocked && (
                                   <div className="mt-2 space-y-3">
-                                    {amtCenters.length === 0 ? (
+                                    <div className="flex flex-col gap-2">
                                       <Button 
-                                        onClick={handleCheckTurnoAvailability}
-                                        disabled={isLoadingTurnos}
-                                        variant="outline"
+                                        onClick={() => {
+                                          handleStartStep('turno');
+                                          window.open('https://web.amt.gob.ec/web/citaPrevia/#/home', '_blank');
+                                        }}
+                                        disabled={isBlocked}
+                                        variant="default"
                                         size="sm"
-                                        className="h-8 text-[10px] font-bold uppercase tracking-widest border-blue-200 text-blue-600 hover:bg-blue-50"
+                                        className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] uppercase tracking-widest rounded-xl shadow-md shadow-blue-100 flex items-center gap-2"
                                       >
-                                        {isLoadingTurnos ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <CalendarClock className="w-3 h-3 mr-2" />}
-                                        Consultar Disponibilidad AMT
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        Ir al Portal de Turnos Oficial
                                       </Button>
-                                    ) : (
-                                      <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
-                                        <p className="text-[9px] font-bold text-slate-400 uppercase mb-2">Centros con Cupos Disponibles</p>
-                                        {amtCenters.map((c, idx) => (
-                                          <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
-                                            <div className="min-w-0">
-                                              <p className="text-xs font-bold text-slate-800 truncate">{c.nombre}</p>
-                                              <p className="text-[9px] text-slate-500">{c.disponibilidad}</p>
+                                      
+                                      {isBlocked && (
+                                        <p className="text-[10px] text-red-500 font-bold italic flex items-center gap-1 mt-1">
+                                          <AlertCircle className="w-3 h-3" /> 
+                                          Debes estar al día con Multas y Matrícula para agendar el turno.
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    <div className="pt-2 border-t border-slate-100">
+                                      <p className="text-[9px] font-bold text-slate-400 uppercase mb-2">Asistente de Cupos Bucle</p>
+                                      {amtCenters.length === 0 ? (
+                                        <Button 
+                                          onClick={handleCheckTurnoAvailability}
+                                          disabled={isLoadingTurnos || isBlocked}
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-8 text-[10px] font-bold uppercase tracking-widest border-blue-200 text-blue-600 hover:bg-blue-50"
+                                        >
+                                          {isLoadingTurnos ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <CalendarClock className="w-3 h-3 mr-2" />}
+                                          Consultar Disponibilidad Interna
+                                        </Button>
+                                      ) : (
+                                        <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
+                                          {amtCenters.map((c, idx) => (
+                                            <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 shadow-sm">
+                                              <div className="min-w-0">
+                                                <p className="text-xs font-bold text-slate-800 truncate">{c.nombre}</p>
+                                                <p className="text-[9px] text-slate-500">{c.disponibilidad}</p>
+                                              </div>
+                                              <Button 
+                                                onClick={() => handleBookTurno(c)}
+                                                disabled={isBooking}
+                                                size="sm"
+                                                className="h-7 px-3 text-[9px] font-black bg-blue-600 hover:bg-blue-700"
+                                              >
+                                                {isBooking ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'Agendar'}
+                                              </Button>
                                             </div>
-                                            <Button 
-                                              onClick={() => handleBookTurno(c)}
-                                              disabled={isBooking}
-                                              size="sm"
-                                              className="h-7 px-3 text-[9px] font-black bg-blue-600 hover:bg-blue-700"
-                                            >
-                                              {isBooking ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : 'Agendar'}
-                                            </Button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
 

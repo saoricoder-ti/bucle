@@ -24,8 +24,22 @@ export interface DatosVehiculo {
 }
 
 export type EntidadMonitoreada = 
-  | { tipo_identificador: 'RUC'; identificador: string; nombre_alias: string; datos_extra: DatosEmpresa }
-  | { tipo_identificador: 'PLACA'; identificador: string; nombre_alias: string; datos_extra: DatosVehiculo };
+  | { 
+      tipo_identificador: 'RUC'; 
+      identificador: string; 
+      nombre_alias: string; 
+      datos_extra: DatosEmpresa;
+      sync_status?: string;
+      sync_message?: string;
+    }
+  | { 
+      tipo_identificador: 'PLACA'; 
+      identificador: string; 
+      nombre_alias: string; 
+      datos_extra: DatosVehiculo;
+      sync_status?: string;
+      sync_message?: string;
+    };
 
 export interface PasoCiclo {
     id: string;
