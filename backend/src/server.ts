@@ -4,19 +4,55 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import { aplicarEngine } from './engine';
 import { scrapeVehicleData } from './services/vehicleDataScraper';
+import { scrapeFines } from './services/fineScraper';
+import { scrapeUnifiedData } from './services/unifiedScraper';
+import { scrapeSRIData } from './services/sriDataScraper';
+import { evaluateAlerts } from './services/notificationService';
 
 // Cargar variables desde el .env del backend
 dotenv.config({ path: '.env' }); 
 
-const app = express();
+export const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3001; // Usar 3001 para no pisar el anterior si está vivo
+const PORT = process.env.PORT || 3001; 
 const supabaseUrl = process.env.SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_ANON_KEY || '';
 
-const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder');
+export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseKey || 'placeholder');
+
+app.get('/api/notificaciones', async (req: Request, res: Response) => {
+    try {
+        const { data: notifs, error } = await supabase
+            .from('notificaciones')
+            .select(`
+                *,
+                entidades_monitoreadas(nombre_alias, identificador)
+            `)
+            .order('creado_en', { ascending: false });
+
+        if (error) throw error;
+        res.json({ success: true, data: notifs });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/notificaciones/:id/leer', async (req: Request, res: Response) => {
+    try {
+        const { id } = req.params;
+        const { error } = await supabase
+            .from('notificaciones')
+            .update({ leida: true })
+            .eq('id', id);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 app.get('/api/dashboard', async (req: Request, res: Response) => {
     try {
@@ -33,6 +69,8 @@ app.get('/api/dashboard', async (req: Request, res: Response) => {
                     nombre_alias,
                     datos_extra
                 ),
+                total_multas,
+                detalle_multas,
                 pasos_ciclo (
                     id,
                     titulo,
@@ -107,42 +145,141 @@ app.post('/api/multas/verificar', async (req: Request, res: Response) => {
 app.get('/api/vehiculos/info/:placa', async (req: Request, res: Response) => {
     try {
         const { placa } = req.params;
-        if (!placa) {
-            return res.status(400).json({ success: false, error: 'Placa no proporcionada' });
-        }
+        if (!placa) return res.status(400).json({ success: false, error: 'Placa no proporcionada' });
 
-        const scrapedData = await scrapeVehicleData(placa as string);
-        if (!scrapedData) {
-            return res.status(404).json({ success: false, error: 'Placa no encontrada o externa falló' });
-        }
+        // 1. Unified Scraping with individual resilience
+        let unifiedData: any = {
+            marca: '-', modelo: '-', año_fabricacion: '-', color_oficial: '-', 
+            cilindraje: '-', tipo_servicio: '-', ramv_cpn: '-', numero_chasis: '-', 
+            pais_origen: '-', estado_polarizado: 'NO', anio_matricula: '-', 
+            fecha_matricula: '-', fecha_caducidad: '-', tieneMultas: false, 
+            totalMultas: 0, detalleMultas: []
+        };
+        
+        let sriValores: any = {
+            total: 0, impuesto: 0, sppat: 0, tasas: 0, 
+            estado: 'PAGADO', exonerado: true
+        };
 
-        // Fetch current entity to merge datos_extra
-        const { data: entidad, error: fetchError } = await supabase
+        try {
+            const results = await Promise.allSettled([
+                scrapeUnifiedData(placa as string),
+                scrapeSRIData(placa as string)
+            ]);
+
+            if (results[0].status === 'fulfilled') unifiedData = results[0].value;
+            if (results[1].status === 'fulfilled') sriValores = results[1].value;
+        } catch (e) {
+            console.error('⚠️ Error parcial en scrapers:', e);
+        }
+        
+        // 2. Prepare Technical Data (13 specific variables)
+        const technicalData = {
+            marca: unifiedData.marca || '-',
+            modelo: unifiedData.modelo || '-',
+            anio: unifiedData.año_fabricacion || '-',
+            año_fabricacion: unifiedData.año_fabricacion || '-',
+            color_oficial: unifiedData.color_oficial || '-',
+            color: unifiedData.color_oficial || '-',
+            cilindraje: unifiedData.cilindraje || '-',
+            tipo_servicio: unifiedData.tipo_servicio || '-',
+            servicio: unifiedData.tipo_servicio || '-',
+            ramv_cpn: unifiedData.ramv_cpn || '-',
+            numero_chasis: unifiedData.numero_chasis || '-',
+            pais_origen: unifiedData.pais_origen || '-',
+            estado_polarizado: unifiedData.estado_polarizado || 'NO',
+            anio_matricula: unifiedData.anio_matricula || '-',
+            fecha_matricula: unifiedData.fecha_matricula || '-',
+            fecha_caducidad: unifiedData.fecha_caducidad || '-',
+            fuente: 'real' as const
+        };
+
+        const nombreAlias = `${technicalData.marca} ${technicalData.modelo}`;
+
+        // 3. Fetch existing entity to merge JSONB
+        const { data: existingEntidad, error: fetchError } = await supabase
             .from('entidades_monitoreadas')
             .select('*')
             .eq('identificador', placa)
             .single();
 
-        if (fetchError || !entidad) {
-            return res.status(404).json({ success: false, error: 'Entidad no encontrada en base de datos local' });
+        if (fetchError || !existingEntidad) {
+            throw new Error('Entidad no encontrada para actualizar');
         }
 
-        const datosExtra = entidad.datos_extra || {};
-        const nuevosDatosExtra = { ...datosExtra, ...scrapedData };
+        const mergedDatosExtra = {
+            ...(existingEntidad.datos_extra || {}),
+            ...technicalData
+        };
 
-        let nombreAlias = entidad.nombre_alias;
-        if (nuevosDatosExtra.marca && nuevosDatosExtra.modelo && nuevosDatosExtra.marca !== 'Desconocido') {
-            nombreAlias = `${nuevosDatosExtra.marca} ${nuevosDatosExtra.modelo}`;
-        }
-
-        const { error: updateError } = await supabase
+        // 4. Update Entity
+        const { data: entidad, error: entityError } = await supabase
             .from('entidades_monitoreadas')
-            .update({ datos_extra: nuevosDatosExtra, nombre_alias: nombreAlias })
-            .eq('identificador', placa);
+            .update({ 
+                datos_extra: mergedDatosExtra, 
+                nombre_alias: nombreAlias 
+            })
+            .eq('identificador', placa)
+            .select()
+            .single();
 
-        if (updateError) throw updateError;
+        if (entityError) throw entityError;
 
-        res.json({ success: true, data: nuevosDatosExtra });
+        // 5. Update Active Cycle with Fines and SRI Registration values (Resilient to missing columns)
+        try {
+            const updatePayload: any = { 
+                total_multas: unifiedData.totalMultas, 
+                detalle_multas: unifiedData.detalleMultas
+            };
+
+            // Only add registration fields if they likely exist in the schema
+            if (sriValores.total !== undefined) {
+                updatePayload.valor_matricula = sriValores.total;
+                updatePayload.estado_pago_sri = sriValores.estado;
+            }
+
+            const { error: cycleError } = await supabase
+                .from('ciclos_actividad')
+                .update(updatePayload)
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO');
+
+            if (cycleError) {
+                console.warn('⚠️ No se pudo actualizar columnas de matrícula (posible esquema desactualizado):', cycleError.message);
+            }
+        } catch (e) {
+            console.error('❌ Error fatal al actualizar ciclo:', e);
+        }
+
+        // 6. Automatically Update Step 2 (Pago de Matrícula) if Paid
+        if (sriValores.estado === 'PAGADO') {
+            const { data: activeCycle } = await supabase
+                .from('ciclos_actividad')
+                .select('id')
+                .eq('entidad_id', entidad.id)
+                .eq('estado', 'ACTIVO')
+                .single();
+
+            if (activeCycle) {
+                await supabase
+                    .from('pasos_ciclo')
+                    .update({ completado: true })
+                    .eq('ciclo_id', activeCycle.id)
+                    .ilike('titulo', '%Matrícula (SRI)%');
+            }
+        }
+
+        res.json({ 
+            success: true, 
+            data: technicalData, 
+            nombre_alias: nombreAlias,
+            fines: {
+                tieneMultas: unifiedData.tieneMultas,
+                totalMultas: unifiedData.totalMultas,
+                detalleMultas: unifiedData.detalleMultas
+            },
+            matricula: sriValores
+        });
     } catch (err: any) {
         if (err.message === 'CAPTCHA_REQUIRED') {
             return res.status(403).json({ success: false, error: 'CAPTCHA_REQUIRED' });
@@ -152,57 +289,138 @@ app.get('/api/vehiculos/info/:placa', async (req: Request, res: Response) => {
     }
 });
 
+// --- MODULAR ENDPOINTS ---
+
+app.get('/api/vehiculos/ficha/:placa', async (req: Request, res: Response) => {
+    try {
+        const { placa } = req.params;
+        const normalizedPlate = (placa as string).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        console.log(`[Modular] Consultando FICHA para: ${normalizedPlate}`);
+        
+        const data = await scrapeUnifiedData(normalizedPlate);
+        res.json({ success: true, data });
+    } catch (err: any) {
+        console.error('🔥 Error en ficha:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/vehiculos/multas/:placa', async (req: Request, res: Response) => {
+    try {
+        const { placa } = req.params;
+        const normalizedPlate = (placa as string).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        console.log(`[Modular] Consultando MULTAS para: ${normalizedPlate}`);
+        
+        const data = await scrapeFines(normalizedPlate);
+        res.json({ success: true, data });
+    } catch (err: any) {
+        console.error('🔥 Error en multas:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/vehiculos/matricula/:placa', async (req: Request, res: Response) => {
+    try {
+        const { placa } = req.params;
+        const normalizedPlate = (placa as string).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        console.log(`[Modular] Consultando MATRICULA para: ${normalizedPlate}`);
+        
+        const data = await scrapeSRIData(normalizedPlate);
+        res.json({ success: true, data });
+    } catch (err: any) {
+        console.error('🔥 Error en matricula:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+import { getCompleteVehicleData } from './services/vehicleOrchestrator';
+
 app.post('/api/vehiculos', async (req: Request, res: Response) => {
     try {
         const { placa } = req.body;
         if (!placa) return res.status(400).json({ success: false, error: 'Placa requerida' });
 
-        const normalizedPlate = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const normalizedPlate = placa.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        
+        // 🇪🇨 ECUADOR PLATE VALIDATION (3 Letters + 3 or 4 Numbers)
+        const plateRegex = /^[A-Z]{3}\d{3,4}$/i;
+        if (!plateRegex.test(normalizedPlate)) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Formato de placa inválido. Debe tener 3 letras y 3 o 4 números (Ej: ABC1234 o ABC123)' 
+            });
+        }
 
-        // Check if exists
-        const { data: existing } = await supabase.from('entidades_monitoreadas').select('id').eq('identificador', normalizedPlate).single();
+        // 1. Unique Check
+        const { data: existing } = await supabase
+            .from('entidades_monitoreadas')
+            .select('id')
+            .eq('identificador', normalizedPlate)
+            .maybeSingle();
+        
         if (existing) return res.status(400).json({ success: false, error: 'La placa ya existe' });
 
-        // Insert entity
+        // 2. Initial Registration (Lightweight)
+        // We try to get basic data but proceed even if it fails partially
+        let fullData;
+        try {
+            fullData = await getCompleteVehicleData(normalizedPlate);
+        } catch (e) {
+            console.warn('[Registration] Scraper global falló, creando registro básico...');
+            fullData = null;
+        }
+
+        const marca = fullData?.technicalSpecs?.marca || 'Cargando...';
+        const modelo = fullData?.technicalSpecs?.modelo || '';
+        const nombreAlias = marca !== 'Cargando...' ? `${marca} ${modelo}`.toUpperCase() : `VEHÍCULO ${normalizedPlate}`;
+
+        const technicalData = fullData ? {
+            ...fullData.technicalSpecs,
+            ...fullData.legalStatus,
+            fuente: 'real'
+        } : { marca: 'Cargando...', modelo: 'Cargando...', fuente: 'pendiente' };
+
         const { data: entidad, error: entityErr } = await supabase
             .from('entidades_monitoreadas')
             .insert({
                 tipo_identificador: 'PLACA',
                 identificador: normalizedPlate,
-                nombre_alias: `Vehículo ${normalizedPlate}`,
-                datos_extra: { ultimo_digito: parseInt(normalizedPlate.slice(-1)) }
+                nombre_alias: nombreAlias,
+                datos_extra: technicalData
             })
             .select('*')
             .single();
 
         if (entityErr) throw entityErr;
 
-        // Insert cycle
+        // 3. Create Cycle
         const { data: ciclo, error: cicloErr } = await supabase
             .from('ciclos_actividad')
             .insert({
-                entidad_id: entidad.id,
+                entidad_id: (entidad as any).id,
                 nombre: 'Revisión Técnica Vehicular',
-                estado: 'ACTIVO'
+                estado: 'ACTIVO',
+                total_multas: fullData?.financialPending?.totalMultas || 0,
+                valor_matricula: fullData?.financialPending?.valorMatricula || 0,
             })
             .select('*')
             .single();
 
         if (cicloErr) throw cicloErr;
 
-        // Insert steps
-        const pasos = [
-            { ciclo_id: ciclo.id, titulo: '1. Pago de Multas', orden: 1 },
-            { ciclo_id: ciclo.id, titulo: '2. Revisión Técnica', orden: 2 },
-            { ciclo_id: ciclo.id, titulo: '3. Pago de Matrícula', orden: 3 }
+        // 4. Steps
+        const steps = [
+            { ciclo_id: (ciclo as any).id, titulo: 'Pago de Multas (ANT/Municipales)', orden: 1, completado: (fullData?.financialPending?.totalMultas === 0) },
+            { ciclo_id: (ciclo as any).id, titulo: 'Pago de Matrícula (SRI)', orden: 2, completado: (fullData?.financialPending?.valorMatricula === 0) },
+            { ciclo_id: (ciclo as any).id, titulo: 'Generación de Turno RTV', orden: 3, completado: false },
+            { ciclo_id: (ciclo as any).id, titulo: 'Aprobación de Revisión', orden: 4, completado: false }
         ];
 
-        const { error: stepsErr } = await supabase.from('pasos_ciclo').insert(pasos);
-        if (stepsErr) throw stepsErr;
+        await supabase.from('pasos_ciclo').insert(steps);
 
         res.json({ success: true, data: { entidad, ciclo } });
     } catch (err: any) {
-        console.error('Error al crear vehiculo:', err);
+        console.error('🔥 Error en registro:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
@@ -279,6 +497,110 @@ app.get('/api/imagen/vehiculo', async (req: Request, res: Response) => {
     } catch (err: any) {
         console.warn('[ImageResolver] Error:', err.message);
         res.json({ success: false, url: null });
+    }
+});
+
+import { scrapeAMTAvailability } from './services/amtScraper';
+
+app.get('/api/rtv/disponibilidad/:placa', async (req: Request, res: Response) => {
+    try {
+        const { placa } = req.params;
+        
+        // 1. Verify eligibility (Step 1 & 2 must be clear)
+        const { data: ciclo, error: fetchError } = await supabase
+            .from('ciclos_actividad')
+            .select('*, pasos_ciclo(*), entidades_monitoreadas!inner(*)')
+            .eq('estado', 'ACTIVO')
+            .eq('entidades_monitoreadas.identificador', placa)
+            .single();
+
+        // Check if steps 1 and 2 are completed
+        const steps = (ciclo?.pasos_ciclo || []).sort((a: any, b: any) => a.orden - b.orden);
+        const step1 = steps.find((s: any) => s.orden === 1);
+        const step2 = steps.find((s: any) => s.orden === 2);
+
+        if (!step1?.completado || !step2?.completado) {
+            return res.status(403).json({ 
+                success: false, 
+                error: 'BLOQUEO: Debes solventar Multas y Matrícula antes de agendar turno.' 
+            });
+        }
+
+        const disponibilidad = await scrapeAMTAvailability(placa as string);
+        res.json({ success: true, data: disponibilidad });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/rtv/agendar', async (req: Request, res: Response) => {
+    try {
+        const { ciclo_id, centro, fecha } = req.body;
+        
+        // 1. Update cycle with appointment data
+        const { error: updateError } = await supabase
+            .from('ciclos_actividad')
+            .update({ 
+                centro_rtv: centro,
+                fecha_turno: fecha
+            })
+            .eq('id', ciclo_id);
+
+        if (updateError) throw updateError;
+
+        // 2. Mark Step 3 as completed
+        await supabase
+            .from('pasos_ciclo')
+            .update({ completado: true })
+            .eq('ciclo_id', ciclo_id)
+            .eq('orden', 3);
+
+        res.json({ success: true, message: 'Turno agendado con éxito' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/rtv/finalizar', async (req: Request, res: Response) => {
+    try {
+        const { ciclo_id } = req.body;
+
+        // 1. Fetch current cycle data
+        const { data: ciclo, error: fetchError } = await supabase
+            .from('ciclos_actividad')
+            .select('*, entidades_monitoreadas(*)')
+            .eq('id', ciclo_id)
+            .single();
+
+        if (fetchError || !ciclo) throw new Error('Ciclo no encontrado');
+
+        // 2. Migrate to Historial
+        const { error: histError } = await supabase
+            .from('historial_servicio')
+            .insert({
+                ciclo_id: (ciclo as any).id,
+                periodo: `Año ${new Date().getFullYear()}`,
+                fecha_cierre: new Date().toISOString().split('T')[0],
+                comentario: `Aprobado en Centro ${(ciclo as any).centro_rtv || 'N/A'}.`
+            });
+
+        if (histError) throw histError;
+
+        // 3. Mark Step 4 as completed and Close Cycle
+        await supabase
+            .from('pasos_ciclo')
+            .update({ completado: true })
+            .eq('ciclo_id', ciclo_id)
+            .eq('orden', 4);
+
+        await supabase
+            .from('ciclos_actividad')
+            .update({ estado: 'CERRADO' })
+            .eq('id', ciclo_id);
+
+        res.json({ success: true, message: 'Ciclo completado y movido al historial' });
+    } catch (err: any) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
